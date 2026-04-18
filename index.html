@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sirius Maker | Painel</title>
+    <style>
+        body { background: #080809; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: #111113; padding: 40px; border-radius: 20px; width: 380px; border: 1px solid #1f1f22; box-shadow: 0 10px 30px #000; text-align: center; }
+        h1 { color: #00ff6a; margin-bottom: 20px; font-size: 24px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #222; background: #000; color: #fff; box-sizing: border-box; outline: none; }
+        input:focus { border-color: #00ff6a; }
+        button { width: 100%; padding: 15px; background: #00ff6a; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; margin-top: 10px; }
+        button:hover { background: #00d659; transform: scale(1.02); }
+        #status { margin-top: 15px; font-weight: bold; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>SIRIUS MAKER PRO</h1>
+        <input type="password" id="t" placeholder="Token do Bot">
+        <input type="text" id="n" placeholder="Nome da Loja">
+        <input type="text" id="p" placeholder="Chave PIX">
+        <input type="text" id="b" placeholder="Link do Banner">
+        <button onclick="ligar()">ATIVAR SISTEMA</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function ligar() {
+            const st = document.getElementById('status');
+            st.innerText = "⏳ Ligando bot...";
+            try {
+                const res = await fetch('/ligar-bot', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        token: document.getElementById('t').value,
+                        nomeLoja: document.getElementById('n').value,
+                        pix: document.getElementById('p').value,
+                        banner: document.getElementById('b').value
+                    })
+                });
+                const data = await res.json();
+                if(data.msg === "OK") {
+                    st.innerText = "✅ ONLINE! Já pode fechar o site.";
+                    st.style.color = "#00ff6a";
+                }
+            } catch (e) {
+                st.innerText = "❌ ERRO AO CONECTAR";
+                st.style.color = "#ff4444";
+            }
+        }
+    </script>
+</body>
+</html>
