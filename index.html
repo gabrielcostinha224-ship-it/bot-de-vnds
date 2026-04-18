@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sirius Maker | Painel</title>
+    <title>OBRIGADO POR COMPRA O BOT| Painel</title>
     <style>
         body { background: #080809; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .box { background: #111113; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; border: 1px solid #1f1f22; box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center; }
-        h1 { color: #00ff6a; margin-bottom: 25px; font-size: 26px; letter-spacing: 1px; }
+        h1 { color: #00ff6a; margin-bottom: 25px; font-size: 26px; }
         label { display: block; text-align: left; margin-bottom: 5px; color: #888; font-size: 14px; }
-        input { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #222; background: #000; color: #fff; box-sizing: border-box; outline: none; transition: 0.3s; }
-        input:focus { border-color: #00ff6a; }
-        button { width: 100%; padding: 15px; background: #00ff6a; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; color: #000; transition: 0.3s; margin-top: 10px; text-transform: uppercase; }
-        button:hover { background: #00d659; transform: translateY(-2px); }
-        #status { margin-top: 20px; font-weight: bold; font-size: 14px; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #222; background: #000; color: #fff; box-sizing: border-box; outline: none; }
+        button { width: 100%; padding: 15px; background: #00ff6a; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; color: #000; text-transform: uppercase; transition: 0.3s; }
+        button:hover { background: #00d659; transform: scale(1.02); }
+        #status { margin-top: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -22,22 +21,28 @@
         <label>Token do Bot:</label>
         <input type="password" id="t" placeholder="Insira o Token">
         <label>Nome da Loja:</label>
-        <input type="text" id="n" placeholder="Ex: GBZ Store">
+        <input type="text" id="n" placeholder="Nome da Loja">
         <label>Chave PIX:</label>
-        <input type="text" id="p" placeholder="E-mail ou CPF">
+        <input type="text" id="p" placeholder="Sua Chave PIX">
         <label>Banner URL:</label>
-        <input type="text" id="b" placeholder="Link do Imgur">
-        <button onclick="ligar()">ATIVAR SISTEMA</button>
+        <input type="text" id="b" placeholder="Link do Banner">
+        <button id="btn" onclick="ligar()">ATIVAR SISTEMA</button>
         <div id="status"></div>
     </div>
     <script>
         async function ligar() {
+            const btn = document.getElementById('btn');
             const st = document.getElementById('status');
-            st.innerText = "⏳ Ativando...";
+            
+            btn.disabled = true;
+            btn.innerText = "ENVIANDO...";
+            st.innerText = "⏳ Iniciando processo...";
+            st.style.color = "#aaa";
+
             try {
-                const res = await fetch('/ligar-bot', {
+                const response = await fetch('/ligar-bot', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         token: document.getElementById('t').value,
                         nomeLoja: document.getElementById('n').value,
@@ -45,12 +50,20 @@
                         banner: document.getElementById('b').value
                     })
                 });
-                const data = await res.json();
-                if(data.msg === "OK") {
-                    st.innerText = "✅ SISTEMA ONLINE!";
+
+                if (response.ok) {
+                    st.innerText = "✅ COMANDO ENVIADO! O Bot vai ligar em instantes.";
                     st.style.color = "#00ff6a";
+                    btn.innerText = "SISTEMA ATIVADO";
+                } else {
+                    throw new Error();
                 }
-            } catch (e) { st.innerText = "❌ ERRO"; }
+            } catch (err) {
+                st.innerText = "❌ ERRO AO CONECTAR";
+                st.style.color = "#ff4444";
+                btn.disabled = false;
+                btn.innerText = "TENTAR NOVAMENTE";
+            }
         }
     </script>
 </body>
