@@ -3,66 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OBRIGADO POR COMPRA O BOT| Painel</title>
+    <title>Sirius Vendas | Dashboard</title>
     <style>
-        body { background: #080809; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .box { background: #111113; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; border: 1px solid #1f1f22; box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center; }
-        h1 { color: #00ff6a; margin-bottom: 25px; font-size: 26px; }
-        label { display: block; text-align: left; margin-bottom: 5px; color: #888; font-size: 14px; }
-        input { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #222; background: #000; color: #fff; box-sizing: border-box; outline: none; }
-        button { width: 100%; padding: 15px; background: #00ff6a; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; color: #000; text-transform: uppercase; transition: 0.3s; }
-        button:hover { background: #00d659; transform: scale(1.02); }
-        #status { margin-top: 20px; font-weight: bold; }
+        body { background: #0d0d0f; color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: #16161a; padding: 40px; border-radius: 24px; width: 380px; border: 1px solid #252529; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .logo { color: #00ff6a; font-size: 28px; font-weight: 800; letter-spacing: -1px; margin-bottom: 10px; }
+        .status-bar { font-size: 12px; color: #888; margin-bottom: 30px; text-transform: uppercase; }
+        input { width: 100%; padding: 14px; margin: 12px 0; border-radius: 12px; border: 1px solid #2a2a2e; background: #09090b; color: #fff; box-sizing: border-box; outline: none; transition: 0.3s; }
+        input:focus { border-color: #00ff6a; }
+        button { width: 100%; padding: 16px; background: #00ff6a; color: #000; border: none; border-radius: 14px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        button:hover { background: #00d659; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 255, 106, 0.2); }
+        #s { margin-top: 20px; font-weight: 500; font-size: 14px; }
     </style>
 </head>
 <body>
-    <div class="box">
-        <h1>OBRIGADO PELA COMPRA</h1>
-        <label>Token do Bot:</label>
-        <input type="password" id="t" placeholder="Insira o Token">
-        <label>Nome da Loja:</label>
-        <input type="text" id="n" placeholder="Nome da Loja">
-        <label>Chave PIX:</label>
-        <input type="text" id="p" placeholder="Sua Chave PIX">
-        <label>Banner URL:</label>
-        <input type="text" id="b" placeholder="Link do Banner">
-        <button id="btn" onclick="ligar()">ATIVAR SISTEMA</button>
-        <div id="status"></div>
+    <div class="container">
+        <div class="logo">SIRIUS VENDAS</div>
+        <div class="status-bar">System Control v2.0</div>
+        
+        <input type="password" id="t" placeholder="Insira o Token do Bot">
+        <button onclick="ligar()">ATIVAR SISTEMA</button>
+        
+        <p id="s"></p>
     </div>
+
     <script>
         async function ligar() {
-            const btn = document.getElementById('btn');
-            const st = document.getElementById('status');
+            const s = document.getElementById('s');
+            const btn = document.querySelector('button');
             
+            s.innerText = "⏳ Autenticando com Discord...";
+            s.style.color = "#888";
             btn.disabled = true;
-            btn.innerText = "ENVIANDO...";
-            st.innerText = "⏳ Iniciando processo...";
-            st.style.color = "#aaa";
 
             try {
-                const response = await fetch('/ligar-bot', {
+                const res = await fetch('/ligar-bot', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        token: document.getElementById('t').value,
-                        nomeLoja: document.getElementById('n').value,
-                        pix: document.getElementById('p').value,
-                        banner: document.getElementById('b').value
-                    })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ token: document.getElementById('t').value })
                 });
-
-                if (response.ok) {
-                    st.innerText = "✅ COMANDO ENVIADO! O Bot vai ligar em instantes.";
-                    st.style.color = "#00ff6a";
-                    btn.innerText = "SISTEMA ATIVADO";
+                const data = await res.json();
+                
+                if(data.msg === "OK") {
+                    s.innerText = "✅ SISTEMA ONLINE E OPERANTE!";
+                    s.style.color = "#00ff6a";
                 } else {
-                    throw new Error();
+                    s.innerText = "❌ ERRO: TOKEN INVÁLIDO";
+                    s.style.color = "#ff4444";
+                    btn.disabled = false;
                 }
-            } catch (err) {
-                st.innerText = "❌ ERRO AO CONECTAR";
-                st.style.color = "#ff4444";
+            } catch (e) {
+                s.innerText = "❌ ERRO NA CONEXÃO";
                 btn.disabled = false;
-                btn.innerText = "TENTAR NOVAMENTE";
             }
         }
     </script>
