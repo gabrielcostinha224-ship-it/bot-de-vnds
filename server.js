@@ -1,73 +1,84 @@
+const express = require('express');
+const path = require('path');
 const { 
     Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, 
-    PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, 
-    ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle 
+    PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
+    ModalBuilder, TextInputBuilder, TextInputStyle
 } = require('discord.js');
 
-// ... (mantenha a config do express e client do código anterior)
+const app = express();
+app.use(express.json());
 
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+
+// Registro de comandos profissional
 async function registrarComandos(token, clientId) {
     const commands = [
         new SlashCommandBuilder()
-            .setName('criar-painel')
-            .setDescription('Configura um painel de vendas personalizado')
+            .setName('config-venda')
+            .setDescription('Cria um painel de vendas personalizado neste canal')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    try {
+        await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    } catch (error) {
+        console.error('Erro nos comandos:', error);
+    }
 }
 
 async function iniciarBot(token) {
     client.on('interactionCreate', async (i) => {
-        // 1. ABRE O FORMULÁRIO DE CONFIGURAÇÃO
-        if (i.isChatInputCommand() && i.commandName === 'criar-painel') {
-            const modal = new ModalBuilder().setCustomId('modal_painel').setTitle('Configurar Painel Sirius');
-
-            const titulo = new TextInputBuilder().setCustomId('t_painel').setLabel('Título do Produto').setStyle(TextInputStyle.Short);
-            const desc = new TextInputBuilder().setCustomId('d_painel').setLabel('Descrição/Siglas').setStyle(TextInputStyle.Paragraph);
-            const img = new TextInputBuilder().setCustomId('i_painel').setLabel('URL da Imagem (Banner)').setStyle(TextInputStyle.Short);
-            const valor = new TextInputBuilder().setCustomId('v_painel').setLabel('Valor (Ex: 9.99)').setStyle(TextInputStyle.Short);
+        // Abre o formulário para configurar o produto (Igual à sua imagem)
+        if (i.isChatInputCommand() && i.commandName === 'config-venda') {
+            const modal = new ModalBuilder().setCustomId('modal_venda').setTitle('Configurar Produto Sirius');
+            
+            const titulo = new TextInputBuilder().setCustomId('titulo').setLabel('Nome do Produto').setStyle(TextInputStyle.Short).setRequired(true);
+            const desc = new TextInputBuilder().setCustomId('desc').setLabel('Descrição e Siglas').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            const preco = new TextInputBuilder().setCustomId('preco').setLabel('Preço (ex: 9.99)').setStyle(TextInputStyle.Short).setRequired(true);
+            const banner = new TextInputBuilder().setCustomId('banner').setLabel('URL da Imagem/Banner').setStyle(TextInputStyle.Short).setRequired(true);
+            const estoque = new TextInputBuilder().setCustomId('estoque').setLabel('Quantidade em Estoque').setStyle(TextInputStyle.Short).setRequired(true);
 
             modal.addComponents(
                 new ActionRowBuilder().addComponents(titulo),
                 new ActionRowBuilder().addComponents(desc),
-                new ActionRowBuilder().addComponents(img),
-                new ActionRowBuilder().addComponents(valor)
+                new ActionRowBuilder().addComponents(preco),
+                new ActionRowBuilder().addComponents(banner),
+                new ActionRowBuilder().addComponents(estoque)
             );
             return await i.showModal(modal);
         }
 
-        // 2. RECEBE OS DADOS DO MODAL E GERA O PAINEL BONITO
-        if (i.isModalSubmit() && i.customId === 'modal_painel') {
-            const t = i.fields.getTextInputValue('t_painel');
-            const d = i.fields.getTextInputValue('d_painel');
-            const img = i.fields.getTextInputValue('i_painel');
-            const v = i.fields.getTextInputValue('v_painel');
+        // Recebe os dados e cria o painel bonito
+        if (i.isModalSubmit() && i.customId === 'modal_venda') {
+            const [t, d, p, b, e] = ['titulo', 'desc', 'preco', 'banner', 'estoque'].map(f => i.fields.getTextInputValue(f));
 
             const embed = new EmbedBuilder()
                 .setTitle(t)
                 .setDescription(d)
-                .setImage(img) // Aqui entra a URL da imagem que você quer
+                .setImage(b)
                 .setColor("#00ff6a")
-                .addFields({ name: 'Preço', value: `R$ ${v}`, inline: true })
-                .setFooter({ text: "Sirius Arquiteto - Entrega Rápida" });
+                .addFields(
+                    { name: '💰 Preço', value: `R$ ${p}`, inline: true },
+                    { name: '📦 Estoque', value: `${e} unidades`, inline: true }
+                )
+                .setFooter({ text: "Clique no botão abaixo para comprar" });
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`comprar_${t}_${v}`).setLabel('Ver Opções').setStyle(ButtonStyle.Success)
+                new ButtonBuilder().setCustomId(`compra_${t}_${p}`).setLabel('Ver Opções').setStyle(ButtonStyle.Success)
             );
 
             await i.channel.send({ embeds: [embed], components: [row] });
-            return i.reply({ content: "✅ Painel criado!", ephemeral: true });
+            return i.reply({ content: "✅ Painel de vendas criado!", ephemeral: true });
         }
 
-        // 3. LÓGICA DO CARRINHO (IGUAL A SEGUNDA IMAGEM)
-        if (i.isButton() && i.customId.startsWith('comprar_')) {
-            const [_, nome, preco] = i.customId.split('_');
+        // Lógica do Carrinho (Segunda imagem do exemplo)
+        if (i.isButton() && i.customId.startsWith('compra_')) {
+            const [_, prod, valor] = i.customId.split('_');
             
-            // Criar canal de Checkout
             const canal = await i.guild.channels.create({
-                name: `🛒-checkout-${i.user.username}`,
+                name: `🛒-${i.user.username}`,
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -75,22 +86,39 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const revisãoEmbed = new EmbedBuilder()
+            const embedCarrinho = new EmbedBuilder()
                 .setTitle("Revisão do Pedido")
-                .setDescription(`**Produto:** ${nome}\n**Valor:** R$ ${preco}\n**Estoque:** 93 unidades`)
-                .setColor("#5865F2")
-                .setThumbnail(i.message.embeds[0].image?.url);
+                .setDescription(`**Produto:** ${prod}\n**Valor:** R$ ${valor}\n\nEscolha uma opção abaixo:`)
+                .setThumbnail(i.message.embeds[0].image.url)
+                .setColor("#5865F2");
 
-            const rowCheckout = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('ir_pagamento').setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
+            const botoes = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('pagar').setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user}`, embeds: [revisãoEmbed], components: [rowCheckout] });
-            await i.reply({ content: `Carrinho aberto: ${canal}`, ephemeral: true });
+            await canal.send({ content: `${i.user}`, embeds: [embedCarrinho], components: [botoes] });
+            await i.reply({ content: `✅ Carrinho aberto em ${canal}`, ephemeral: true });
         }
     });
 
     await client.login(token);
     await registrarComandos(token, client.user.id);
 }
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+app.post('/ligar-bot', async (req, res) => {
+    try {
+        await iniciarBot(req.body.token);
+        res.send({ msg: "OK" });
+    } catch (e) {
+        res.send({ msg: "ERRO" });
+    }
+});
+
+// A porta deve ser 0.0.0.0 para o Railway funcionar
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
