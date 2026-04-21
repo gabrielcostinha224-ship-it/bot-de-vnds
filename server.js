@@ -39,13 +39,10 @@ async function iniciarBot(token) {
         if (!cargoDono) cargoDono = await i.guild.roles.create({ name: 'Dono Sirius', color: '#ff0000' });
         if (!cargoVend) cargoVend = await i.guild.roles.create({ name: 'Vendedor Sirius', color: '#00ff6a' });
 
-        // 1. ENVIAR PAINEL
+        // 1. ENVIAR PAINEL VITRINE
         if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
             const embed = new EmbedBuilder()
-                .setTitle(db.painel.nome)
-                .setDescription(db.painel.desc)
-                .setColor("#00ff6a")
-                .setImage(db.painel.banner);
+                .setTitle(db.painel.nome).setDescription(db.painel.desc).setColor("#00ff6a").setImage(db.painel.banner);
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('ver_opcoes').setLabel('Ver Opções').setStyle(ButtonStyle.Success),
@@ -56,30 +53,27 @@ async function iniciarBot(token) {
             db.msgPainelId = msg.id;
         }
 
-        // 2. MODAL DE CONFIGURAÇÃO (PAINEL + PRODUTO)
+        // 2. CONFIGURAR (PAINEL + PRODUTO + PIX)
         if (i.isButton() && i.customId === 'configurar_loja') {
             if (!i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Acesso negado.", ephemeral: true });
 
             const modal = new ModalBuilder().setCustomId('m_setup').setTitle('Configuração Sirius');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('1. Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_desc').setLabel('2. Descrição da Loja').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('3. URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Novo Produto: Nome').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_qtd').setLabel('Novo Produto: Quantidade e Emoji').setStyle(TextInputStyle.Short).setPlaceholder("Ex: 50 📦").setRequired(false))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('Sua Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Produto: Nome').setStyle(TextInputStyle.Short).setRequired(false)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_qtd').setLabel('Produto: Qtd e Emoji').setStyle(TextInputStyle.Short).setRequired(false))
             );
             return await i.showModal(modal);
         }
 
-        // SALVAR E ATUALIZAR
         if (i.isModalSubmit() && i.customId === 'm_setup') {
             db.painel.nome = i.fields.getTextInputValue('loja_nome');
-            db.painel.desc = i.fields.getTextInputValue('loja_desc');
             db.painel.banner = i.fields.getTextInputValue('loja_banner');
-
+            db.chavePix = i.fields.getTextInputValue('pix');
             const pNome = i.fields.getTextInputValue('p_nome');
-            const pQtd = i.fields.getTextInputValue('p_qtd');
-            if (pNome) db.produtos.push({ nome: pNome, info: pQtd || "Em estoque", preco: "A definir" });
+            if (pNome) db.produtos.push({ nome: pNome, info: i.fields.getTextInputValue('p_qtd') || "Disponível" });
 
             const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
             if (msg) {
@@ -89,18 +83,17 @@ async function iniciarBot(token) {
             await i.reply({ content: "✅ Configurações salvas!", ephemeral: true });
         }
 
-        // 3. VER OPÇÕES (MENU)
+        // 3. VER OPÇÕES (MENU DROPDOWN)
         if (i.isButton() && i.customId === 'ver_opcoes') {
-            if (db.produtos.length === 0) return i.reply({ content: "❌ Nenhum produto cadastrado.", ephemeral: true });
-
+            if (db.produtos.length === 0) return i.reply({ content: "❌ Sem produtos.", ephemeral: true });
             const menu = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('comprar').setPlaceholder('Clique aqui para ver as opções')
                     .addOptions(db.produtos.map(p => ({ label: p.nome, description: p.info, value: p.nome })))
             );
-            await i.reply({ content: "Selecione o que deseja comprar:", components: [menu], ephemeral: true });
+            await i.reply({ content: "Selecione o produto:", components: [menu], ephemeral: true });
         }
 
-        // 4. TICKET (SÓ REVISÃO, SEM LOGO)
+        // 4. CRIAR TICKET (REVISÃO INICIAL)
         if (i.isStringSelectMenu() && i.customId === 'comprar') {
             const prod = db.produtos.find(p => p.nome === i.values[0]);
             const canal = await i.guild.channels.create({
@@ -113,18 +106,37 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const embed = new EmbedBuilder()
-                .setTitle("Revisão do Pedido")
-                .setDescription(`**Produto:** ${prod.nome}\n**Detalhes:** ${prod.info}`)
-                .setColor("#5865F2");
-
+            const embed = new EmbedBuilder().setTitle("Revisão do Pedido").setDescription(`**Produto:** ${prod.nome}\n**Status:** ${prod.info}`).setColor("#5865F2");
             const btns = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('ir_pagar').setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user} | Staff`, embeds: [embed], components: [btns] });
+            await canal.send({ content: `${i.user} | Equipe Sirius`, embeds: [embed], components: [btns] });
             await i.update({ content: `✅ Canal: ${canal}`, components: [] });
+        }
+
+        // 5. IR PARA O PAGAMENTO (MOSTRA PIX + REVISÃO FINAL)
+        if (i.isButton() && i.customId === 'ir_pagar') {
+            const pixEmbed = new EmbedBuilder()
+                .setTitle("Pagamento e Revisão Final")
+                .setDescription(`Efetue o pagamento na chave abaixo:\n\n**Chave PIX:**\n\`${db.chavePix}\`\n\n*Clique em confirmar após o envio do comprovante.*`)
+                .setColor("#00ff6a");
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('confirmar_pago').setLabel('Confirmar Pagamento').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('cancelar').setLabel('Fechar Ticket').setStyle(ButtonStyle.Danger)
+            );
+
+            await i.update({ embeds: [pixEmbed], components: [row] });
+        }
+
+        // 6. CONFIRMAR E FECHAR (APENAS STAFF)
+        if (i.isButton() && i.customId === 'confirmar_pago') {
+            if (!i.member.roles.cache.has(cargoVend.id) && !i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Apenas a equipe confirma.", ephemeral: true });
+            
+            await i.reply("💎 **Pagamento Confirmado! O ticket será fechado em 10 segundos.**");
+            setTimeout(() => i.channel.delete().catch(() => {}), 10000);
         }
 
         if (i.isButton() && i.customId === 'cancelar') await i.channel.delete().catch(() => {});
