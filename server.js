@@ -14,61 +14,58 @@ const client = new Client({ intents: [3276799] });
 async function registrarComandos(token, clientId) {
     const commands = [
         new SlashCommandBuilder()
-            .setName('config-venda')
-            .setDescription('Cria um painel de vendas personalizado')
+            .setName('painel-vendas')
+            .setDescription('Configura o painel completo de vendas')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
     try {
         await rest.put(Routes.applicationCommands(clientId), { body: commands });
+        console.log('✅ Comando /painel-vendas registrado!');
     } catch (e) { console.error(e); }
 }
 
 async function iniciarBot(token) {
-    client.on('ready', async () => {
-        console.log(`✅ Sistema Sirius Online: ${client.user.tag}`);
-    });
-
     client.on('interactionCreate', async (i) => {
-        // 1. CRIAR CARGO VENDEDOR CASO NÃO EXISTA
+        // Garantir que o cargo de Vendedor exista
         let cargoVendedor = i.guild.roles.cache.find(r => r.name === 'Vendedor Sirius');
-        if (!cargoVendedor) {
+        if (!cargoVendedor && i.guild) {
             cargoVendedor = await i.guild.roles.create({
                 name: 'Vendedor Sirius',
                 color: '#00ff6a',
-                reason: 'Cargo necessário para gerenciar vendas'
-            });
+                reason: 'Gerenciamento de vendas'
+            }).catch(() => null);
         }
 
-        // 2. CONFIGURAÇÃO DO PAINEL (MODAL)
-        if (i.isChatInputCommand() && i.commandName === 'config-venda') {
-            const modal = new ModalBuilder().setCustomId('m_venda').setTitle('Configurar Produto Sirius');
+        // 1. ABRIR CONFIGURAÇÃO DO PAINEL
+        if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
+            const modal = new ModalBuilder().setCustomId('m_config').setTitle('Configuração Sirius Vendas');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t').setLabel('Título').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Descrição/Siglas').setStyle(TextInputStyle.Paragraph)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('v').setLabel('Valor R$').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('i').setLabel('URL da Imagem (Banner)').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('e').setLabel('Estoque Inicial').setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t').setLabel('Nome do Produto').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Descrição (Siglas/Itens)').setStyle(TextInputStyle.Paragraph)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('v').setLabel('Valor (R$)').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('i').setLabel('Link da Imagem/Banner').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('e').setLabel('Estoque').setStyle(TextInputStyle.Short))
             );
             return await i.showModal(modal);
         }
 
-        // 3. POSTAR PAINEL
-        if (i.isModalSubmit() && i.customId === 'm_venda') {
+        // 2. ENVIAR O PAINEL PARA O CANAL
+        if (i.isModalSubmit() && i.customId === 'm_config') {
             const [t, d, v, img, e] = ['t', 'd', 'v', 'i', 'e'].map(f => i.fields.getTextInputValue(f));
             const embed = new EmbedBuilder()
                 .setTitle(t).setDescription(d).setImage(img).setColor("#00ff6a")
-                .addFields({ name: '💰 Preço', value: `R$ ${v}`, inline: true }, { name: '📦 Estoque', value: `${e}`, inline: true });
+                .addFields({ name: '💰 Valor', value: `R$ ${v}`, inline: true }, { name: '📦 Estoque', value: `${e}`, inline: true });
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`opcoes_${t}_${v}`).setLabel('Ver Opções').setStyle(ButtonStyle.Success)
             );
             await i.channel.send({ embeds: [embed], components: [row] });
-            return i.reply({ content: "✅ Painel postado!", ephemeral: true });
+            return i.reply({ content: "✅ Painel de vendas gerado com sucesso!", ephemeral: true });
         }
 
-        // 4. ABRIR CARRINHO (SÓ CLIENTE E VENDEDOR VEEM)
+        // 3. CLICOU EM "VER OPÇÕES" -> CRIA CARRINHO
         if (i.isButton() && i.customId.startsWith('opcoes_')) {
             const [_, nome, preco] = i.customId.split('_');
             const canal = await i.guild.channels.create({
@@ -77,54 +74,53 @@ async function iniciarBot(token) {
                 permissionOverwrites: [
                     { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: cargoVendedor.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    { id: cargoVendedor?.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
                 ]
             });
 
             const emb = new EmbedBuilder()
-                .setTitle("Revisão do Pedido").setDescription(`**Produto:** ${nome}\n**Valor:** R$ ${preco}`)
+                .setTitle("Revisão do Pedido").setDescription(`**Produto:** ${nome}\n**Preço:** R$ ${preco}\n\nEscolha uma das ações abaixo para prosseguir.`)
                 .setColor("#5865F2").setThumbnail(i.message.embeds[0].image?.url);
 
             const btns = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`pix_${preco}`).setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`pagar_${preco}`).setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user} | Suporte: <@&${cargoVendedor.id}>`, embeds: [emb], components: [btns] });
-            await i.reply({ content: `Carrinho aberto: ${canal}`, ephemeral: true });
+            await canal.send({ content: `${i.user} | Vendedores: <@&${cargoVendedor?.id}>`, embeds: [emb], components: [btns] });
+            await i.reply({ content: `✅ Seu carrinho foi aberto em ${canal}`, ephemeral: true });
         }
 
-        // 5. PARTE DO PIX COM TIMER DE 10 MINUTOS
-        if (i.isButton() && i.customId.startsWith('pix_')) {
+        // 4. IR PARA O PIX + TIMER DE 10 MINUTOS
+        if (i.isButton() && i.customId.startsWith('pagar_')) {
             const valor = i.customId.split('_')[1];
             const pixEmbed = new EmbedBuilder()
-                .setTitle("Pagamento via PIX")
-                .setDescription(`Efetue o pagamento de **R$ ${valor}** na chave abaixo:\n\n\`SUA-CHAVE-PIX-AQUI\`\n\n⌛ **Você tem 10 minutos para pagar.**`)
-                .setFooter({ text: "Aguardando confirmação do vendedor..." }).setColor("#00ff6a");
+                .setTitle("Pagamento Sirius Vendas")
+                .setDescription(`Efetue o pagamento de **R$ ${valor}** via PIX.\n\n**Chave Copia e Cola:**\n\`SUA-CHAVE-AQUI\`\n\n⌛ **Atenção:** Você tem 10 minutos para concluir.`)
+                .setColor("#00ff6a").setFooter({ text: "Aguardando confirmação do vendedor..." });
 
-            const btnConfirma = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('confirmar_pago').setLabel('Confirmar Pagamento (Vendedor)').setStyle(ButtonStyle.Primary)
+            const btnVendedor = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('confirmar').setLabel('Confirmar Recebimento').setStyle(ButtonStyle.Primary)
             );
 
-            await i.update({ embeds: [pixEmbed], components: [btnConfirma] });
+            await i.update({ embeds: [pixEmbed], components: [btnVendedor] });
 
-            // Timer de 10 minutos (600000ms)
+            // Timer de 10 minutos
             setTimeout(async () => {
-                const fetchedChannel = await i.guild.channels.fetch(i.channelId).catch(() => null);
-                if (fetchedChannel) {
-                    await fetchedChannel.send("⚠️ Tempo esgotado! O carrinho será fechado em 5 segundos.");
-                    setTimeout(() => fetchedChannel.delete().catch(() => {}), 5000);
+                const checkCanal = await i.guild.channels.fetch(i.channelId).catch(() => null);
+                if (checkCanal) {
+                    await checkCanal.send("⏰ **Tempo esgotado!** O pagamento não foi confirmado a tempo.");
+                    setTimeout(() => checkCanal.delete().catch(() => {}), 5000);
                 }
             }, 600000);
         }
 
-        // 6. CONFIRMAÇÃO DO VENDEDOR
-        if (i.isButton() && i.customId === 'confirmar_pago') {
-            if (!i.member.roles.cache.has(cargoVendedor.id)) {
-                return i.reply({ content: "❌ Apenas vendedores podem confirmar o pagamento!", ephemeral: true });
+        // 5. CONFIRMAÇÃO PELO VENDEDOR
+        if (i.isButton() && i.customId === 'confirmar') {
+            if (!i.member.roles.cache.has(cargoVendedor?.id)) {
+                return i.reply({ content: "❌ Apenas quem possui o cargo **Vendedor Sirius** pode confirmar!", ephemeral: true });
             }
-            await i.reply("✅ **Pagamento Confirmado!** O produto será entregue em breve.");
-            // Aqui você pode adicionar a lógica de entrega automática
+            await i.reply("💎 **Pagamento confirmado pelo vendedor!** Iniciando entrega...");
         }
 
         if (i.isButton() && i.customId === 'cancelar') {
@@ -143,4 +139,4 @@ app.post('/ligar-bot', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Painel Sirius rodando na porta ${PORT}`));
