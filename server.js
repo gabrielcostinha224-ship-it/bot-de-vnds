@@ -3,7 +3,7 @@ const path = require('path');
 const { 
     Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, 
     PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
-    ModalBuilder, TextInputBuilder, TextInputStyle 
+    ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder 
 } = require('discord.js');
 
 const app = express();
@@ -11,121 +11,155 @@ app.use(express.json());
 
 const client = new Client({ intents: [3276799] });
 
+// Banco de dados em memória
+let db = {
+    produtos: [],
+    chavePix: "Sua Chave Pix Aqui"
+};
+
 async function registrarComandos(token, clientId) {
     const commands = [
         new SlashCommandBuilder()
             .setName('painel-vendas')
-            .setDescription('Configura o painel completo de vendas')
+            .setDescription('Configura o painel principal e a chave PIX')
+            .addStringOption(opt => opt.setName('pix').setDescription('Sua chave PIX para recebimento').setRequired(true))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
     try {
         await rest.put(Routes.applicationCommands(clientId), { body: commands });
-        console.log('✅ Comando /painel-vendas registrado!');
     } catch (e) { console.error(e); }
 }
 
 async function iniciarBot(token) {
     client.on('interactionCreate', async (i) => {
-        // Garantir que o cargo de Vendedor exista
+        if (!i.guild) return;
+
+        // CRIAÇÃO AUTOMÁTICA DE CARGOS
+        let cargoDono = i.guild.roles.cache.find(r => r.name === 'Dono Sirius');
         let cargoVendedor = i.guild.roles.cache.find(r => r.name === 'Vendedor Sirius');
-        if (!cargoVendedor && i.guild) {
-            cargoVendedor = await i.guild.roles.create({
-                name: 'Vendedor Sirius',
-                color: '#00ff6a',
-                reason: 'Gerenciamento de vendas'
-            }).catch(() => null);
+        
+        if (!cargoDono) cargoDono = await i.guild.roles.create({ name: 'Dono Sirius', color: '#ff0000', permissions: [PermissionFlagsBits.Administrator] });
+        if (!cargoVendedor) cargoVendedor = await i.guild.roles.create({ name: 'Vendedor Sirius', color: '#00ff6a' });
+
+        // 1. COMANDO: /painel-vendas (Define a chave e posta o painel)
+        if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
+            db.chavePix = i.options.getString('pix');
+            
+            const embed = new EmbedBuilder()
+                .setTitle("🛒 Central de Vendas Sirius")
+                .setDescription("Selecione um produto abaixo para iniciar sua compra.\n\n*Clique no menu para ver as opções disponíveis.*")
+                .setColor("#00ff6a")
+                .setFooter({ text: "Sistema de Vendas Profissional" });
+
+            const menu = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('selecionar_produto')
+                    .setPlaceholder('Clique aqui para ver as opções')
+                    .addOptions(db.produtos.length > 0 ? db.produtos.map(p => ({
+                        label: p.nome,
+                        description: `R$ ${p.preco} | Estoque: ${p.estoque}`,
+                        value: p.nome
+                    })) : [{ label: 'Nenhum produto em estoque', value: 'vazio' }])
+            );
+
+            const adminRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('admin_config').setEmoji('⚙️').setStyle(ButtonStyle.Secondary).setLabel('Gerenciar Loja')
+            );
+
+            await i.reply({ embeds: [embed], components: [menu, adminRow] });
         }
 
-        // 1. ABRIR CONFIGURAÇÃO DO PAINEL
-        if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
-            const modal = new ModalBuilder().setCustomId('m_config').setTitle('Configuração Sirius Vendas');
+        // 2. BOTÃO ENGRENAGEM (MODAL DE PRODUTO)
+        if (i.isButton() && i.customId === 'admin_config') {
+            if (!i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Apenas o **Dono Sirius** pode configurar!", ephemeral: true });
+
+            const modal = new ModalBuilder().setCustomId('m_prod').setTitle('Adicionar Novo Produto');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t').setLabel('Nome do Produto').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Descrição (Siglas/Itens)').setStyle(TextInputStyle.Paragraph)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('v').setLabel('Valor (R$)').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('i').setLabel('Link da Imagem/Banner').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('e').setLabel('Estoque').setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('n').setLabel('Nome').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p').setLabel('Preço').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('e').setLabel('Estoque').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('i').setLabel('Link da Imagem').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Descrição (Siglas)').setStyle(TextInputStyle.Paragraph))
             );
             return await i.showModal(modal);
         }
 
-        // 2. ENVIAR O PAINEL PARA O CANAL
-        if (i.isModalSubmit() && i.customId === 'm_config') {
-            const [t, d, v, img, e] = ['t', 'd', 'v', 'i', 'e'].map(f => i.fields.getTextInputValue(f));
-            const embed = new EmbedBuilder()
-                .setTitle(t).setDescription(d).setImage(img).setColor("#00ff6a")
-                .addFields({ name: '💰 Valor', value: `R$ ${v}`, inline: true }, { name: '📦 Estoque', value: `${e}`, inline: true });
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`opcoes_${t}_${v}`).setLabel('Ver Opções').setStyle(ButtonStyle.Success)
-            );
-            await i.channel.send({ embeds: [embed], components: [row] });
-            return i.reply({ content: "✅ Painel de vendas gerado com sucesso!", ephemeral: true });
+        // SALVAR NO DB
+        if (i.isModalSubmit() && i.customId === 'm_prod') {
+            db.produtos.push({
+                nome: i.fields.getTextInputValue('n'),
+                preco: i.fields.getTextInputValue('p'),
+                estoque: i.fields.getTextInputValue('e'),
+                img: i.fields.getTextInputValue('i'),
+                desc: i.fields.getTextInputValue('d')
+            });
+            await i.reply({ content: "✅ Produto salvo! Reenvie o `/painel-vendas` para atualizar o menu.", ephemeral: true });
         }
 
-        // 3. CLICOU EM "VER OPÇÕES" -> CRIA CARRINHO
-        if (i.isButton() && i.customId.startsWith('opcoes_')) {
-            const [_, nome, preco] = i.customId.split('_');
+        // 3. SELEÇÃO NO MENU -> CRIA CARRINHO
+        if (i.isStringSelectMenu() && i.customId === 'selecionar_produto') {
+            if (i.values[0] === 'vazio') return i.reply({ content: "❌ Adicione produtos primeiro!", ephemeral: true });
+            
+            const prod = db.produtos.find(p => p.nome === i.values[0]);
             const canal = await i.guild.channels.create({
                 name: `🛒-${i.user.username}`,
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: cargoVendedor?.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    { id: cargoVendedor.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                    { id: cargoDono.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
                 ]
             });
 
-            const emb = new EmbedBuilder()
-                .setTitle("Revisão do Pedido").setDescription(`**Produto:** ${nome}\n**Preço:** R$ ${preco}\n\nEscolha uma das ações abaixo para prosseguir.`)
-                .setColor("#5865F2").setThumbnail(i.message.embeds[0].image?.url);
+            const embedRevisao = new EmbedBuilder()
+                .setTitle("Revisão do Pedido")
+                .setDescription(`**Produto:** ${prod.nome}\n**Valor:** R$ ${prod.preco}\n**Estoque:** ${prod.estoque}\n\n${prod.desc}`)
+                .setColor("#5865F2").setImage(prod.img);
 
-            const btns = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`pagar_${preco}`).setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
+            const botoes = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`pix_${prod.preco}`).setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user} | Vendedores: <@&${cargoVendedor?.id}>`, embeds: [emb], components: [btns] });
-            await i.reply({ content: `✅ Seu carrinho foi aberto em ${canal}`, ephemeral: true });
+            await canal.send({ content: `${i.user} | Staff: <@&${cargoVendedor.id}>`, embeds: [embedRevisao], components: [botoes] });
+            await i.reply({ content: `✅ Carrinho criado: ${canal}`, ephemeral: true });
         }
 
-        // 4. IR PARA O PIX + TIMER DE 10 MINUTOS
-        if (i.isButton() && i.customId.startsWith('pagar_')) {
+        // 4. CHECKOUT PIX + TIMER
+        if (i.isButton() && i.customId.startsWith('pix_')) {
             const valor = i.customId.split('_')[1];
-            const pixEmbed = new EmbedBuilder()
-                .setTitle("Pagamento Sirius Vendas")
-                .setDescription(`Efetue o pagamento de **R$ ${valor}** via PIX.\n\n**Chave Copia e Cola:**\n\`SUA-CHAVE-AQUI\`\n\n⌛ **Atenção:** Você tem 10 minutos para concluir.`)
-                .setColor("#00ff6a").setFooter({ text: "Aguardando confirmação do vendedor..." });
+            const pixEmb = new EmbedBuilder()
+                .setTitle("Pagamento PIX")
+                .setDescription(`Realize o pagamento de **R$ ${valor}**\n\n**Chave Copia e Cola:**\n\`${db.chavePix}\`\n\n⌛ **Timer:** 10 minutos para confirmação.`)
+                .setColor("#00ff6a");
 
-            const btnVendedor = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('confirmar').setLabel('Confirmar Recebimento').setStyle(ButtonStyle.Primary)
+            const rowConfirm = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('confirmado').setLabel('Confirmar Recebimento').setStyle(ButtonStyle.Primary)
             );
 
-            await i.update({ embeds: [pixEmbed], components: [btnVendedor] });
+            await i.update({ embeds: [pixEmb], components: [rowConfirm] });
 
-            // Timer de 10 minutos
             setTimeout(async () => {
-                const checkCanal = await i.guild.channels.fetch(i.channelId).catch(() => null);
-                if (checkCanal) {
-                    await checkCanal.send("⏰ **Tempo esgotado!** O pagamento não foi confirmado a tempo.");
-                    setTimeout(() => checkCanal.delete().catch(() => {}), 5000);
+                const c = await i.guild.channels.fetch(i.channelId).catch(() => null);
+                if (c) {
+                    await c.send("⏰ **Tempo Esgotado!** O carrinho será fechado.");
+                    setTimeout(() => c.delete().catch(() => {}), 5000);
                 }
             }, 600000);
         }
 
-        // 5. CONFIRMAÇÃO PELO VENDEDOR
-        if (i.isButton() && i.customId === 'confirmar') {
-            if (!i.member.roles.cache.has(cargoVendedor?.id)) {
-                return i.reply({ content: "❌ Apenas quem possui o cargo **Vendedor Sirius** pode confirmar!", ephemeral: true });
-            }
-            await i.reply("💎 **Pagamento confirmado pelo vendedor!** Iniciando entrega...");
+        // 5. CONFIRMAÇÃO DO VENDEDOR/DONO
+        if (i.isButton() && i.customId === 'confirmado') {
+            const hasRole = i.member.roles.cache.has(cargoVendedor.id) || i.member.roles.cache.has(cargoDono.id);
+            if (!hasRole) return i.reply({ content: "❌ Apenas a equipe de vendas pode confirmar!", ephemeral: true });
+            
+            await i.reply("💎 **Pagamento Confirmado!** Verifique o chat para a entrega.");
         }
 
-        if (i.isButton() && i.customId === 'cancelar') {
-            await i.channel.delete().catch(() => {});
-        }
+        if (i.isButton() && i.customId === 'cancelar') await i.channel.delete().catch(() => {});
     });
 
     await client.login(token);
@@ -137,6 +171,4 @@ app.post('/ligar-bot', async (req, res) => {
     try { await iniciarBot(req.body.token); res.send({ msg: "OK" }); } 
     catch (e) { res.send({ msg: "ERRO" }); }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Painel Sirius rodando na porta ${PORT}`));
+app.listen(process.env.PORT || 3000, '0.0.0.0');
