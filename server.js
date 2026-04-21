@@ -12,7 +12,7 @@ app.use(express.json());
 const client = new Client({ intents: [3276799] });
 
 let db = {
-    painel: { nome: "Nome da Loja", desc: "Descrição da Loja", banner: null },
+    painel: { nome: "Nome da Loja", desc: "Descrição do Painel", banner: null },
     produtos: [],
     chavePix: "Não definida",
     msgPainelId: null
@@ -42,7 +42,10 @@ async function iniciarBot(token) {
         // 1. ENVIAR PAINEL VITRINE
         if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
             const embed = new EmbedBuilder()
-                .setTitle(db.painel.nome).setDescription(db.painel.desc).setColor("#00ff6a").setImage(db.painel.banner);
+                .setTitle(db.painel.nome)
+                .setDescription(db.painel.desc)
+                .setColor("#00ff6a")
+                .setImage(db.painel.banner);
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('ver_opcoes').setLabel('Ver Opções').setStyle(ButtonStyle.Success),
@@ -53,27 +56,29 @@ async function iniciarBot(token) {
             db.msgPainelId = msg.id;
         }
 
-        // 2. CONFIGURAR (PAINEL + PRODUTO + PIX)
+        // 2. CONFIGURAR (PAINEL + PRODUTOS + PIX)
         if (i.isButton() && i.customId === 'configurar_loja') {
             if (!i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Acesso negado.", ephemeral: true });
 
             const modal = new ModalBuilder().setCustomId('m_setup').setTitle('Configuração Sirius');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_desc').setLabel('Descrição (Substitui o Painel)').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('Sua Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Produto: Nome').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_qtd').setLabel('Produto: Qtd e Emoji').setStyle(TextInputStyle.Short).setRequired(false))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Nome do Produto').setStyle(TextInputStyle.Short).setRequired(false)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_qtd').setLabel('Quantidade do Produto').setStyle(TextInputStyle.Short).setRequired(false))
             );
             return await i.showModal(modal);
         }
 
         if (i.isModalSubmit() && i.customId === 'm_setup') {
             db.painel.nome = i.fields.getTextInputValue('loja_nome');
+            db.painel.desc = i.fields.getTextInputValue('loja_desc');
             db.painel.banner = i.fields.getTextInputValue('loja_banner');
-            db.chavePix = i.fields.getTextInputValue('pix');
+            
             const pNome = i.fields.getTextInputValue('p_nome');
-            if (pNome) db.produtos.push({ nome: pNome, info: i.fields.getTextInputValue('p_qtd') || "Disponível" });
+            const pQtd = i.fields.getTextInputValue('p_qtd');
+            if (pNome) db.produtos.push({ nome: pNome, qtd: pQtd || "Disponível" });
 
             const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
             if (msg) {
@@ -83,17 +88,17 @@ async function iniciarBot(token) {
             await i.reply({ content: "✅ Configurações salvas!", ephemeral: true });
         }
 
-        // 3. VER OPÇÕES (MENU DROPDOWN)
+        // 3. VER OPÇÕES
         if (i.isButton() && i.customId === 'ver_opcoes') {
             if (db.produtos.length === 0) return i.reply({ content: "❌ Sem produtos.", ephemeral: true });
             const menu = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('comprar').setPlaceholder('Clique aqui para ver as opções')
-                    .addOptions(db.produtos.map(p => ({ label: p.nome, description: p.info, value: p.nome })))
+                new StringSelectMenuBuilder().setCustomId('comprar').setPlaceholder('Escolha um item da lista')
+                    .addOptions(db.produtos.map(p => ({ label: p.nome, description: `Estoque: ${p.qtd}`, value: p.nome })))
             );
             await i.reply({ content: "Selecione o produto:", components: [menu], ephemeral: true });
         }
 
-        // 4. CRIAR TICKET (REVISÃO INICIAL)
+        // 4. CRIAR TICKET
         if (i.isStringSelectMenu() && i.customId === 'comprar') {
             const prod = db.produtos.find(p => p.nome === i.values[0]);
             const canal = await i.guild.channels.create({
@@ -106,21 +111,21 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const embed = new EmbedBuilder().setTitle("Revisão do Pedido").setDescription(`**Produto:** ${prod.nome}\n**Status:** ${prod.info}`).setColor("#5865F2");
+            const embed = new EmbedBuilder().setTitle("Revisão do Pedido").setDescription(`**Produto:** ${prod.nome}\n**Estoque:** ${prod.qtd}`).setColor("#5865F2");
             const btns = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('ir_pagar').setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('cancelar').setLabel('Cancelar Compra').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user} | Equipe Sirius`, embeds: [embed], components: [btns] });
-            await i.update({ content: `✅ Canal: ${canal}`, components: [] });
+            await canal.send({ content: `${i.user} | Staff Sirius`, embeds: [embed], components: [btns] });
+            await i.update({ content: `✅ Ticket criado: ${canal}`, components: [] });
         }
 
-        // 5. IR PARA O PAGAMENTO (MOSTRA PIX + REVISÃO FINAL)
+        // 5. IR PARA O PAGAMENTO
         if (i.isButton() && i.customId === 'ir_pagar') {
             const pixEmbed = new EmbedBuilder()
-                .setTitle("Pagamento e Revisão Final")
-                .setDescription(`Efetue o pagamento na chave abaixo:\n\n**Chave PIX:**\n\`${db.chavePix}\`\n\n*Clique em confirmar após o envio do comprovante.*`)
+                .setTitle("Pagamento & Confirmação")
+                .setDescription(`Efetue o PIX na chave:\n\n\`${db.chavePix}\`\n\n*Envie o comprovante abaixo e aguarde a entrega.*`)
                 .setColor("#00ff6a");
 
             const row = new ActionRowBuilder().addComponents(
@@ -131,15 +136,17 @@ async function iniciarBot(token) {
             await i.update({ embeds: [pixEmbed], components: [row] });
         }
 
-        // 6. CONFIRMAR E FECHAR (APENAS STAFF)
+        // 6. CONFIRMAR (TICKET CONTINUA ABERTO)
         if (i.isButton() && i.customId === 'confirmar_pago') {
-            if (!i.member.roles.cache.has(cargoVend.id) && !i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Apenas a equipe confirma.", ephemeral: true });
+            if (!i.member.roles.cache.has(cargoVend.id) && !i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Sem permissão.", ephemeral: true });
             
-            await i.reply("💎 **Pagamento Confirmado! O ticket será fechado em 10 segundos.**");
-            setTimeout(() => i.channel.delete().catch(() => {}), 10000);
+            await i.reply({ content: "✅ **Pagamento Confirmado!**\nO vendedor enviará o produto em breve. Aguarde neste chat." });
         }
 
-        if (i.isButton() && i.customId === 'cancelar') await i.channel.delete().catch(() => {});
+        // 7. FECHAR TICKET MANUALMENTE
+        if (i.isButton() && i.customId === 'cancelar') {
+            await i.channel.delete().catch(() => {});
+        }
     });
 
     await client.login(token);
