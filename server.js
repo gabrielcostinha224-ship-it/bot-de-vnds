@@ -12,7 +12,7 @@ app.use(express.json());
 const client = new Client({ intents: [3276799] });
 
 let db = {
-    painel: { nome: "Nome da Loja", banner: null },
+    painel: { nome: "Nome da Loja", desc: "Descrição do Painel", banner: null },
     produtos: [],
     chavePix: "Não definida",
     msgPainelId: null
@@ -39,9 +39,11 @@ async function iniciarBot(token) {
         if (!cargoDono) cargoDono = await i.guild.roles.create({ name: 'Dono Sirius', color: '#ff0000' });
         if (!cargoVend) cargoVend = await i.guild.roles.create({ name: 'Vendedor Sirius', color: '#00ff6a' });
 
+        // 1. ENVIAR PAINEL
         if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
             const embed = new EmbedBuilder()
                 .setTitle(db.painel.nome)
+                .setDescription(db.painel.desc)
                 .setColor("#00ff6a")
                 .setImage(db.painel.banner);
 
@@ -54,65 +56,55 @@ async function iniciarBot(token) {
             db.msgPainelId = msg.id;
         }
 
-        // FORMULÁRIO NA ORDEM QUE VOCÊ PEDIU
+        // 2. CONFIGURAR (ORDEM EXATA QUE VOCÊ PEDIU)
         if (i.isButton() && i.customId === 'configurar_loja') {
             if (!i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Sem permissão.", ephemeral: true });
 
             const modal = new ModalBuilder().setCustomId('m_setup').setTitle('Configuração Sirius');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_desc').setLabel('Descrever Produto').setStyle(TextInputStyle.Paragraph).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Nome do Produto').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('Valor do Produto').setStyle(TextInputStyle.Short).setRequired(false)),
-                // CHAVE PIX SERÁ SALVA JUNTO
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_nome').setLabel('1. NOME DA LOJA').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_desc').setLabel('2. DESCRIÇÃO (ACIMA DA URL)').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_config').setLabel('3. URL BANNER | CHAVE PIX').setStyle(TextInputStyle.Short).setPlaceholder("link_da_imagem | sua_chave_pix")),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('4. NOME DO PRODUTO').setStyle(TextInputStyle.Short).setRequired(false)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('5. VALOR DO PRODUTO').setStyle(TextInputStyle.Short).setRequired(false))
             );
-            // Nota: Discord permite até 5 campos por Modal. Vou agrupar o PIX para caber tudo.
-            // Para garantir que funcione, vou colocar o PIX no lugar do banner ou valor se estourar o limite de 5 linhas.
-            // Como você pediu 6 campos, vou unificar Nome e Descrição no código abaixo para caber nas 5 linhas do Discord:
-            
-            const modalCorrigido = new ModalBuilder().setCustomId('m_setup').setTitle('Configuração Sirius');
-            modalCorrigido.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('1. Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_desc').setLabel('2. Descrever Produto').setStyle(TextInputStyle.Paragraph)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('3. URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_info').setLabel('4. Nome | Valor').setStyle(TextInputStyle.Short).setPlaceholder("Ex: Conta Full | R$ 50")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('5. Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix))
-            );
-            return await i.showModal(modalCorrigido);
+            return await i.showModal(modal);
         }
 
         if (i.isModalSubmit() && i.customId === 'm_setup') {
-            db.painel.nome = i.fields.getTextInputValue('loja_nome');
-            db.painel.banner = i.fields.getTextInputValue('loja_banner');
-            db.chavePix = i.fields.getTextInputValue('pix');
+            db.painel.nome = i.fields.getTextInputValue('l_nome');
+            db.painel.desc = i.fields.getTextInputValue('l_desc');
             
-            const pDesc = i.fields.getTextInputValue('p_desc');
-            const pInfo = i.fields.getTextInputValue('p_info'); // Nome | Valor
-            
-            if (pInfo) {
-                const [nome, valor] = pInfo.split('|').map(s => s.trim());
-                db.produtos.push({ nome: nome || "Produto", valor: valor || "A combinar", desc: pDesc || "Sem descrição" });
+            const config = i.fields.getTextInputValue('l_config');
+            if (config.includes('|')) {
+                const [url, pix] = config.split('|').map(s => s.trim());
+                db.painel.banner = url || db.painel.banner;
+                db.chavePix = pix || db.chavePix;
             }
+
+            const pNome = i.fields.getTextInputValue('p_nome');
+            const pValor = i.fields.getTextInputValue('p_valor');
+            if (pNome) db.produtos.push({ nome: pNome, valor: pValor || "A combinar" });
 
             const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
-            if (msg && msg.editable) {
-                const up = new EmbedBuilder().setTitle(db.painel.nome).setImage(db.painel.banner).setColor("#00ff6a");
+            if (msg) {
+                const up = new EmbedBuilder().setTitle(db.painel.nome).setDescription(db.painel.desc).setImage(db.painel.banner).setColor("#00ff6a");
                 await msg.edit({ embeds: [up] });
             }
-            await i.reply({ content: "✅ Configurações salvas!", ephemeral: true });
+            await i.reply({ content: "✅ Loja atualizada!", ephemeral: true });
         }
 
-        if (i.isButton() && i.customId === 'ver_opcoes') {
+        // 3. VER OPÇÕES
+        if (i.isButton() && i.customId('ver_opcoes')) {
             if (db.produtos.length === 0) return i.reply({ content: "❌ Sem produtos.", ephemeral: true });
             const menu = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('comprar').setPlaceholder('Escolha um item da lista')
-                    .addOptions(db.produtos.map((p, index) => ({ label: p.nome, description: `Valor: ${p.valor}`, value: index.toString() })))
+                new StringSelectMenuBuilder().setCustomId('comprar').setPlaceholder('Escolha um item')
+                    .addOptions(db.produtos.map((p, idx) => ({ label: p.nome, description: `Valor: ${p.valor}`, value: idx.toString() })))
             );
-            await i.reply({ content: "Selecione o produto:", components: [menu], ephemeral: true });
+            await i.reply({ content: "Selecione:", components: [menu], ephemeral: true });
         }
 
+        // 4. TICKET
         if (i.isStringSelectMenu() && i.customId === 'comprar') {
             const prod = db.produtos[parseInt(i.values[0])];
             const canal = await i.guild.channels.create({
@@ -126,38 +118,30 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const embed = new EmbedBuilder()
-                .setTitle("Revisão do Pedido")
-                .setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}\n\n**Descrição:**\n${prod.desc}`)
-                .setColor("#5865F2");
-
-            const btns = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('ir_pagar').setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('cancelar').setLabel('Fechar Ticket').setStyle(ButtonStyle.Danger)
+            const embed = new EmbedBuilder().setTitle("Revisão").setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}`).setColor("#5865F2");
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('pagar').setLabel('Pagar').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('del').setLabel('Fechar').setStyle(ButtonStyle.Danger)
             );
-
-            await canal.send({ content: `${i.user} | Staff`, embeds: [embed], components: [btns] });
+            await canal.send({ content: `${i.user}`, embeds: [embed], components: [row] });
             await i.update({ content: `✅ Ticket: ${canal}`, components: [] });
         }
 
-        if (i.isButton() && i.customId === 'ir_pagar') {
-            const pixEmbed = new EmbedBuilder()
-                .setTitle("Pagamento")
-                .setDescription(`Chave PIX:\n\`${db.chavePix}\`\n\n*Envie o comprovante e aguarde.*`)
-                .setColor("#00ff6a");
+        if (i.isButton() && i.customId === 'pagar') {
+            const embed = new EmbedBuilder().setTitle("PIX").setDescription(`Chave:\n\`${db.chavePix}\``).setColor("#00ff6a");
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('conf_p').setLabel('Confirmar Pagamento').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId('cancelar').setLabel('Fechar Ticket').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('conf').setLabel('Confirmar').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('del').setLabel('Fechar').setStyle(ButtonStyle.Danger)
             );
-            await i.update({ embeds: [pixEmbed], components: [row] });
+            await i.update({ embeds: [embed], components: [row] });
         }
 
-        if (i.isButton() && i.customId === 'conf_p') {
+        if (i.isButton() && i.customId === 'conf') {
             if (!i.member.roles.cache.has(cargoVend.id) && !i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Sem permissão.", ephemeral: true });
-            await i.reply("✅ **Pago!** O vendedor vai te entregar agora.");
+            await i.reply("✅ Pago! Aguarde o vendedor.");
         }
 
-        if (i.isButton() && i.customId === 'cancelar') await i.channel.delete().catch(() => {});
+        if (i.isButton() && i.customId === 'del') await i.channel.delete().catch(() => {});
     });
 
     await client.login(token);
