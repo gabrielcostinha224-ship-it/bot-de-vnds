@@ -14,7 +14,7 @@ const client = new Client({ intents: [3276799] });
 let db = {
     painel: { nome: "Nome da Loja", desc: "Descrição do Painel", banner: null },
     produtos: [],
-    chavePix: "Não definida", // ADICIONADO
+    chavePix: "Não definida",
     msgPainelId: null
 };
 
@@ -56,33 +56,37 @@ async function iniciarBot(token) {
             db.msgPainelId = msg.id;
         }
 
-        // 2. CONFIGURAR (ADICIONADO CHAVE PIX E VALOR)
+        // 2. CONFIGURAR (PIX, URL, VALOR)
         if (i.isButton() && i.customId === 'configurar_loja') {
             if (!i.member.roles.cache.has(cargoDono.id)) return i.reply({ content: "❌ Acesso negado.", ephemeral: true });
 
             const modal = new ModalBuilder().setCustomId('m_setup').setTitle('Configuração Sirius');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix)), // ADICIONADO
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pix').setLabel('Chave PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_nome').setLabel('Nome da Loja').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_desc').setLabel('Descrição (Substitui o Painel)').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('loja_banner').setLabel('URL do Banner').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('Nome do Produto').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('Valor do Produto').setStyle(TextInputStyle.Short).setRequired(false)) // ADICIONADO VALOR
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('Valor do Produto').setStyle(TextInputStyle.Short).setRequired(false))
             );
             return await i.showModal(modal);
         }
 
         if (i.isModalSubmit() && i.customId === 'm_setup') {
-            db.chavePix = i.fields.getTextInputValue('pix'); // ADICIONADO
+            db.chavePix = i.fields.getTextInputValue('pix');
             db.painel.nome = i.fields.getTextInputValue('loja_nome');
-            db.painel.desc = i.fields.getTextInputValue('loja_desc');
+            db.painel.banner = i.fields.getTextInputValue('loja_banner'); // URL ADICIONADA
             
             const pNome = i.fields.getTextInputValue('p_nome');
-            const pValor = i.fields.getTextInputValue('p_valor'); // ADICIONADO
+            const pValor = i.fields.getTextInputValue('p_valor');
             if (pNome) db.produtos.push({ nome: pNome, valor: pValor || "A combinar" });
 
             const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
             if (msg) {
-                const up = new EmbedBuilder().setTitle(db.painel.nome).setDescription(db.painel.desc).setColor("#00ff6a");
+                const up = new EmbedBuilder()
+                    .setTitle(db.painel.nome)
+                    .setDescription(db.painel.desc)
+                    .setImage(db.painel.banner) // ATUALIZA O BANNER
+                    .setColor("#00ff6a");
                 await msg.edit({ embeds: [up] });
             }
             await i.reply({ content: "✅ Configurações salvas!", ephemeral: true });
@@ -107,7 +111,8 @@ async function iniciarBot(token) {
                 permissionOverwrites: [
                     { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: cargoVend.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    { id: cargoVend.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                    { id: cargoDono.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
                 ]
             });
 
