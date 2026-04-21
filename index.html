@@ -2,209 +2,46 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GBZ STAR | Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <title>Gabriel Star - Bot Manager</title>
     <style>
-        :root {
-            --primary: #00ff6a;
-            --bg: #080809;
-            --card: #111113;
-            --border: #1f1f22;
-            --text: #ffffff;
-        }
-
-        body { 
-            background: var(--bg); 
-            color: var(--text); 
-            font-family: 'Inter', sans-serif; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            margin: 0;
-            overflow: hidden;
-        }
-
-        /* Efeito de brilho no fundo */
-        .glow {
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            background: var(--primary);
-            filter: blur(150px);
-            opacity: 0.05;
-            z-index: -1;
-        }
-
-        .container { 
-            background: var(--card); 
-            padding: 50px 40px; 
-            border-radius: 28px; 
-            width: 380px; 
-            border: 1px solid var(--border); 
-            text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            transition: transform 0.3s ease;
-        }
-
-        .container:hover {
-            transform: translateY(-5px);
-            border-color: #2a2a2e;
-        }
-
-        .logo-area { margin-bottom: 35px; }
-
-        h1 { 
-            color: var(--primary); 
-            font-size: 32px; 
-            font-weight: 800; 
-            margin: 0;
-            letter-spacing: -1.5px;
-            text-transform: uppercase;
-        }
-
-        p.subtitle {
-            color: #666;
-            font-size: 12px;
-            letter-spacing: 2px;
-            margin-top: 5px;
-            text-transform: uppercase;
-        }
-
-        .input-group {
-            text-align: left;
-            margin-bottom: 25px;
-        }
-
-        label {
-            display: block;
-            font-size: 11px;
-            color: #888;
-            margin-bottom: 8px;
-            font-weight: 600;
-            text-transform: uppercase;
-            padding-left: 5px;
-        }
-
-        input { 
-            width: 100%; 
-            padding: 16px; 
-            border-radius: 14px; 
-            border: 1px solid var(--border); 
-            background: #000; 
-            color: #fff; 
-            box-sizing: border-box; 
-            outline: none;
-            transition: 0.3s;
-            font-size: 14px;
-        }
-
-        input:focus { 
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(0, 255, 106, 0.1);
-        }
-
-        button { 
-            width: 100%; 
-            padding: 18px; 
-            background: var(--primary); 
-            color: #000;
-            border: none; 
-            border-radius: 16px; 
-            font-weight: 800; 
-            font-size: 15px;
-            cursor: pointer; 
-            transition: 0.3s;
-            text-transform: uppercase;
-        }
-
-        button:hover { 
-            background: #00d659; 
-            box-shadow: 0 10px 20px rgba(0, 255, 106, 0.2);
-            transform: scale(1.02);
-        }
-
-        #status { 
-            margin-top: 25px; 
-            font-size: 13px;
-            color: #555;
-            min-height: 20px;
-        }
-
-        /* Animação de carregamento */
-        .loading::after {
-            content: "";
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid #555;
-            border-radius: 50%;
-            border-top-color: var(--primary);
-            animation: spin 0.8s linear infinite;
-            margin-left: 10px;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
+        body { font-family: sans-serif; background: #1a1a1a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: #2a2a2a; padding: 30px; border-radius: 10px; text-align: center; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 350px; }
+        input { width: 90%; padding: 10px; margin: 15px 0; border-radius: 5px; border: none; }
+        button { background: #00ff6a; color: black; border: none; padding: 12px 25px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #00cc55; }
+        .status { margin-top: 15px; font-size: 0.9em; }
     </style>
 </head>
 <body>
-    <div class="glow"></div>
-    
     <div class="container">
-        <div class="logo-area">
-            <h1>GBZ STAR</h1>
-            <p class="subtitle">System Architect v2.0</p>
-        </div>
-
-        <div class="input-group">
-            <label>Token de Acesso Discord</label>
-            <input type="password" id="token" placeholder="Insira o seu bot token">
-        </div>
-
-        <button onclick="ligarBot()" id="mainBtn">Ativar Painel de Vendas</button>
-        
-        <div id="status">Sistema pronto para inicialização</div>
+        <h2>Gabriel Star Bot</h2>
+        <p>Insira o Token do seu Bot abaixo:</p>
+        <input type="password" id="token" placeholder="Seu Token do Discord">
+        <br>
+        <button onclick="ligar()">Ligar Bot Agora</button>
+        <div id="status" class="status"></div>
     </div>
 
     <script>
-        async function ligarBot() {
-            const status = document.getElementById('status');
-            const btn = document.getElementById('mainBtn');
+        async function ligar() {
             const token = document.getElementById('token').value;
+            const status = document.getElementById('status');
+            if(!token) return alert("Digite o token!");
 
-            if(!token) {
-                status.innerText = "❌ Insira um token válido!";
+            status.innerText = "⏳ Tentando ligar...";
+            const response = await fetch('/ligar-bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+            
+            const data = await response.json();
+            if(data.msg === "OK") {
+                status.style.color = "#00ff6a";
+                status.innerText = "✅ Bot Online com Sucesso!";
+            } else {
                 status.style.color = "#ff4444";
-                return;
-            }
-
-            status.innerText = "Conectando ao Discord";
-            status.className = "loading";
-            btn.disabled = true;
-
-            try {
-                const res = await fetch('/ligar-bot', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token: token })
-                });
-                const data = await res.json();
-                
-                if(data.msg === "OK") {
-                    status.innerText = "✅ SISTEMA ONLINE E OPERANTE";
-                    status.style.color = "#00ff6a";
-                    status.className = "";
-                } else {
-                    status.innerText = "❌ ERRO NA AUTENTICAÇÃO";
-                    status.style.color = "#ff4444";
-                    status.className = "";
-                    btn.disabled = false;
-                }
-            } catch (e) {
-                status.innerText = "❌ ERRO DE CONEXÃO COM O SERVIDOR";
-                btn.className = "";
-                btn.disabled = false;
+                status.innerText = "❌ Erro ao ligar. Verifique o token.";
             }
         }
     </script>
