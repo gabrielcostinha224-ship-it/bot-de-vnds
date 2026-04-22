@@ -34,7 +34,6 @@ async function iniciarBot(token) {
     client.on('interactionCreate', async (i) => {
         if (!i.guild) return;
 
-        // CRIA OS CARGOS AUTOMATICAMENTE SE NÃO EXISTIREM
         let cargoDono = i.guild.roles.cache.find(r => r.name === 'Dono Sirius');
         let cargoVend = i.guild.roles.cache.find(r => r.name === 'Vendedor Sirius');
         if (!cargoDono) cargoDono = await i.guild.roles.create({ name: 'Dono Sirius', color: '#ff0000' });
@@ -57,57 +56,66 @@ async function iniciarBot(token) {
             db.msgPainelId = msg.id;
         }
 
-        // 2. BLOQUEIO PARA QUEM NÃO É DONO SIRIUS
-        if (i.isButton() && (i.customId === 'config_painel' || i.customId === 'add_produto')) {
-            if (!i.member.roles.cache.has(cargoDono.id)) {
-                return i.reply({ content: "❌ Você não tem o cargo **Dono Sirius** para usar isso!", ephemeral: true });
-            }
-        }
-
-        // MODAL CONFIGURAR VITRINE
+        // 2. CONFIGURAÇÃO - PARTE 1 (LOJA)
         if (i.isButton() && i.customId === 'config_painel') {
-            const modal = new ModalBuilder().setCustomId('m_loja').setTitle('Configurar Vitrine');
-            modal.addComponents(
+            if (!i.member.roles.cache.has(cargoDono.id)) {
+                return i.reply({ content: "❌ Acesso negado. Apenas para **Dono Sirius**.", ephemeral: true });
+            }
+
+            const modal1 = new ModalBuilder().setCustomId('m_etapa1').setTitle('Configuração: Vitrine');
+            modal1.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_nome').setLabel('NOME DA LOJA').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_desc').setLabel('DESCREVER PRODUTO (PAINEL)').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_url').setLabel('URL DO BANNER').setStyle(TextInputStyle.Short).setValue(db.painel.banner || "")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('NOME DO PRODUTO').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor_pix').setLabel('VALOR | CHAVE PIX').setStyle(TextInputStyle.Short).setPlaceholder("R$ 50 | pix@email.com"))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_url').setLabel('URL DO BANNER').setStyle(TextInputStyle.Short).setValue(db.painel.banner || ""))
             );
-            return await i.showModal(modal);
+            return await i.showModal(modal1);
         }
 
-        // PROCESSAR CONFIGURAÇÃO
-        if (i.isModalSubmit() && i.customId === 'm_loja') {
+        // SALVAR PARTE 1 E IR PARA PARTE 2 (PRODUTO)
+        if (i.isModalSubmit() && i.customId === 'm_etapa1') {
             db.painel.nome = i.fields.getTextInputValue('l_nome');
             db.painel.desc = i.fields.getTextInputValue('l_desc');
             db.painel.banner = i.fields.getTextInputValue('l_url');
-            
-            const pNome = i.fields.getTextInputValue('p_nome');
-            const pDados = i.fields.getTextInputValue('p_valor_pix');
 
-            if (pNome && pDados.includes('|')) {
-                const [valor, pix] = pDados.split('|').map(s => s.trim());
-                db.produtos.push({ nome: pNome, valor: valor, pix: pix });
-                db.chavePix = pix; 
-            }
+            const modal2 = new ModalBuilder().setCustomId('m_etapa2').setTitle('Configuração: Produto');
+            modal2.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('NOME DO PRODUTO').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('VALOR DO PRODUTO').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_pix').setLabel('CHAVE PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix))
+            );
 
+            // Atualiza o visual do painel agora
             const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
             if (msg) {
                 const up = new EmbedBuilder().setTitle(db.painel.nome).setDescription(db.painel.desc).setImage(db.painel.banner).setColor("#00ff6a");
                 await msg.edit({ embeds: [up] });
             }
-            await i.reply({ content: "✅ Painel Atualizado!", ephemeral: true });
+
+            return await i.showModal(modal2);
+        }
+
+        // SALVAR PARTE 2
+        if (i.isModalSubmit() && i.customId === 'm_etapa2') {
+            const nome = i.fields.getTextInputValue('p_nome');
+            const valor = i.fields.getTextInputValue('p_valor');
+            const pix = i.fields.getTextInputValue('p_pix');
+
+            if (nome) {
+                db.produtos.push({ nome, valor, pix });
+                db.chavePix = pix;
+            }
+
+            await i.reply({ content: "✅ Loja e Produto configurados sem misturar nada!", ephemeral: true });
         }
 
         // 3. MENU DE COMPRAS
         if (i.isButton() && i.customId === 'ver_opcoes') {
             if (db.produtos.length === 0) return i.reply({ content: "❌ Sem estoque.", ephemeral: true });
             const menu = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('comprar_item').setPlaceholder('Selecione o produto')
+                new StringSelectMenuBuilder().setCustomId('comprar_item').setPlaceholder('Escolha o produto')
                     .addOptions(db.produtos.map((p, index) => ({ label: p.nome, description: `Valor: ${p.valor}`, value: index.toString() })))
             );
-            await i.reply({ content: "Escolha um item:", components: [menu], ephemeral: true });
+            await i.reply({ content: "Selecione:", components: [menu], ephemeral: true });
         }
 
         // 4. TICKET
@@ -124,25 +132,25 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const embed = new EmbedBuilder().setTitle("Pedido Sirius").setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}`).setColor("#5865F2");
+            const embed = new EmbedBuilder().setTitle("Revisão do Pedido").setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}`).setColor("#5865F2");
             const btns = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`pagar_${i.values[0]}`).setLabel('Pagar').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('fechar').setLabel('Fechar').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`pg_${i.values[0]}`).setLabel('Ir para o Pagamento').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('del_t').setLabel('Fechar').setStyle(ButtonStyle.Danger)
             );
 
             await canal.send({ content: `${i.user}`, embeds: [embed], components: [btns] });
             await i.update({ content: `✅ Ticket: ${canal}`, components: [] });
         }
 
-        // 5. PAGAMENTO NO TICKET
-        if (i.isButton() && i.customId.startsWith('pagar_')) {
+        // 5. PAGAMENTO
+        if (i.isButton() && i.customId.startsWith('pg_')) {
             const idx = parseInt(i.customId.split('_')[1]);
             const prod = db.produtos[idx];
-            const embed = new EmbedBuilder().setTitle("PIX").setDescription(`Pague: **${prod.valor}**\nChave:\n\`${prod.pix}\``).setColor("#00ff6a");
+            const embed = new EmbedBuilder().setTitle("💠 Pagamento PIX").setDescription(`Pague **${prod.valor}**\n\nChave:\n\`${prod.pix}\``).setColor("#00ff6a");
             await i.update({ embeds: [embed] });
         }
 
-        if (i.isButton() && i.customId === 'fechar') await i.channel.delete().catch(() => {});
+        if (i.isButton() && i.customId === 'del_t') await i.channel.delete().catch(() => {});
     });
 
     await client.login(token);
