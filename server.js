@@ -11,18 +11,17 @@ app.use(express.json());
 
 const client = new Client({ intents: [3276799] });
 
+// Banco de dados preparado para múltiplos painéis
 let db = {
-    painel: { nome: "Nome da Loja", desc: "Descrição do Painel", banner: null },
-    produtos: [],
-    chavePix: "Não definida",
-    msgPainelId: null
+    paineis: {}, // Armazena configurações por ID da mensagem
+    chavePixPadrao: "Não definida"
 };
 
 async function registrarComandos(token, clientId) {
     const commands = [
         new SlashCommandBuilder()
-            .setName('painel-vendas')
-            .setDescription('Envia o painel de vendas')
+            .setName('criar-painel')
+            .setDescription('Cria um novo painel de vendas separado')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
@@ -39,13 +38,12 @@ async function iniciarBot(token) {
         if (!cargoDono) cargoDono = await i.guild.roles.create({ name: 'Dono Sirius', color: '#ff0000' });
         if (!cargoVend) cargoVend = await i.guild.roles.create({ name: 'Vendedor Sirius', color: '#00ff6a' });
 
-        // 1. ENVIAR PAINEL
-        if (i.isChatInputCommand() && i.commandName === 'painel-vendas') {
+        // 1. CRIAR NOVO PAINEL (COMANDO)
+        if (i.isChatInputCommand() && i.commandName === 'criar-painel') {
             const embed = new EmbedBuilder()
-                .setTitle(db.painel.nome)
-                .setDescription(db.painel.desc)
-                .setColor("#00ff6a")
-                .setImage(db.painel.banner);
+                .setTitle("Novo Painel")
+                .setDescription("Configure este painel no botão abaixo.")
+                .setColor("#2f3136");
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('ver_opcoes').setLabel('Comprar').setStyle(ButtonStyle.Success),
@@ -54,80 +52,93 @@ async function iniciarBot(token) {
             );
 
             const msg = await i.reply({ embeds: [embed], components: [row], fetchReply: true });
-            db.msgPainelId = msg.id;
+            
+            // Inicializa os dados deste painel específico
+            db.paineis[msg.id] = {
+                nome: "Novo Painel",
+                desc: "Descrição do Painel",
+                banner: null,
+                produtos: []
+            };
         }
 
-        // --- TRAVA DE SEGURANÇA PARA DONO ---
+        // --- TRAVA DE SEGURANÇA DONO SIRIUS ---
         if (i.isButton() && (i.customId === 'config_painel' || i.customId === 'add_estoque')) {
             if (!i.member.roles.cache.has(cargoDono.id)) {
-                return i.reply({ content: "❌ Apenas usuários com o cargo **Dono Sirius** podem usar isso!", ephemeral: true });
+                return i.reply({ content: "❌ Acesso restrito ao cargo **Dono Sirius**.", ephemeral: true });
             }
         }
 
-        // 2. MODAL: CONFIGURAR VITRINE (ENGRENAGEM)
+        // 2. CONFIGURAR VITRINE (ESPECÍFICO DESTE PAINEL)
         if (i.isButton() && i.customId === 'config_painel') {
-            const modal = new ModalBuilder().setCustomId('m_vitrine').setTitle('Configurar Vitrine');
+            const dados = db.paineis[i.message.id] || { nome: "", desc: "", banner: "" };
+            const modal = new ModalBuilder().setCustomId(`m_vitrine_${i.message.id}`).setTitle('Configurar Vitrine');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_nome').setLabel('NOME DA LOJA').setStyle(TextInputStyle.Short).setValue(db.painel.nome)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_desc').setLabel('DESCREVER PAINEL').setStyle(TextInputStyle.Paragraph).setValue(db.painel.desc)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_url').setLabel('URL DO BANNER').setStyle(TextInputStyle.Short).setValue(db.painel.banner || ""))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_nome').setLabel('NOME DA LOJA').setStyle(TextInputStyle.Short).setValue(dados.nome || "")),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_desc').setLabel('DESCREVER PAINEL').setStyle(TextInputStyle.Paragraph).setValue(dados.desc || "")),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('l_url').setLabel('URL DO BANNER').setStyle(TextInputStyle.Short).setValue(dados.banner || ""))
             );
             return await i.showModal(modal);
         }
 
-        // 3. MODAL: ESTOQUE (BOTÃO 📦)
+        // 3. ADICIONAR ESTOQUE (ESPECÍFICO DESTE PAINEL)
         if (i.isButton() && i.customId === 'add_estoque') {
-            const modal = new ModalBuilder().setCustomId('m_estoque').setTitle('Adicionar ao Estoque');
+            const modal = new ModalBuilder().setCustomId(`m_estoque_${i.message.id}`).setTitle('Adicionar ao Estoque');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('NOME DO PRODUTO').setStyle(TextInputStyle.Short).setPlaceholder("Ex: Conta Free Fire")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('VALOR DO PRODUTO').setStyle(TextInputStyle.Short).setPlaceholder("Ex: R$ 50,00")),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_pix').setLabel('CHAVE PIX').setStyle(TextInputStyle.Short).setValue(db.chavePix))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_nome').setLabel('NOME DO PRODUTO').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_valor').setLabel('VALOR DO PRODUTO').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_pix').setLabel('CHAVE PIX').setStyle(TextInputStyle.Short).setValue(db.chavePixPadrao))
             );
             return await i.showModal(modal);
         }
 
-        // --- PROCESSAR FORMULÁRIOS ---
+        // --- PROCESSAR MODALS ---
         if (i.isModalSubmit()) {
-            // Salvar Vitrine
-            if (i.customId === 'm_vitrine') {
-                db.painel.nome = i.fields.getTextInputValue('l_nome');
-                db.painel.desc = i.fields.getTextInputValue('l_desc');
-                db.painel.banner = i.fields.getTextInputValue('l_url');
+            const msgId = i.customId.split('_').pop(); // Pega o ID da mensagem do customID do modal
+            
+            if (i.customId.startsWith('m_vitrine_')) {
+                db.paineis[msgId].nome = i.fields.getTextInputValue('l_nome');
+                db.paineis[msgId].desc = i.fields.getTextInputValue('l_desc');
+                db.paineis[msgId].banner = i.fields.getTextInputValue('l_url');
 
-                const msg = await i.channel.messages.fetch(db.msgPainelId).catch(() => null);
-                if (msg) {
-                    const up = new EmbedBuilder().setTitle(db.painel.nome).setDescription(db.painel.desc).setImage(db.painel.banner).setColor("#00ff6a");
-                    await msg.edit({ embeds: [up] });
-                }
-                await i.reply({ content: "✅ Vitrine atualizada!", ephemeral: true });
+                const embed = new EmbedBuilder()
+                    .setTitle(db.paineis[msgId].nome)
+                    .setDescription(db.paineis[msgId].desc)
+                    .setImage(db.paineis[msgId].banner)
+                    .setColor("#00ff6a");
+
+                await i.update({ embeds: [embed] });
             }
 
-            // Salvar Estoque
-            if (i.customId === 'm_estoque') {
+            if (i.customId.startsWith('m_estoque_')) {
                 const nome = i.fields.getTextInputValue('p_nome');
                 const valor = i.fields.getTextInputValue('p_valor');
                 const pix = i.fields.getTextInputValue('p_pix');
 
-                db.produtos.push({ nome, valor, pix });
-                db.chavePix = pix;
+                db.paineis[msgId].produtos.push({ nome, valor, pix });
+                db.chavePixPadrao = pix;
 
-                await i.reply({ content: `✅ Produto **${nome}** adicionado ao estoque!`, ephemeral: true });
+                await i.reply({ content: `✅ Produto adicionado a este painel!`, ephemeral: true });
             }
         }
 
-        // 4. MENU DE COMPRAS (CLIENTE)
+        // 4. COMPRAR (LÊ APENAS OS PRODUTOS DO PAINEL CLICADO)
         if (i.isButton() && i.customId === 'ver_opcoes') {
-            if (db.produtos.length === 0) return i.reply({ content: "❌ Loja sem estoque no momento.", ephemeral: true });
+            const painel = db.paineis[i.message.id];
+            if (!painel || painel.produtos.length === 0) return i.reply({ content: "❌ Este painel está sem estoque.", ephemeral: true });
+
             const menu = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('comprar_item').setPlaceholder('Escolha o que deseja comprar')
-                    .addOptions(db.produtos.map((p, index) => ({ label: p.nome, description: `Valor: ${p.valor}`, value: index.toString() })))
+                new StringSelectMenuBuilder().setCustomId(`compra_${i.message.id}`).setPlaceholder('Selecione o produto')
+                    .addOptions(painel.produtos.map((p, idx) => ({ label: p.nome, description: `Valor: ${p.valor}`, value: idx.toString() })))
             );
-            await i.reply({ content: "Selecione um item:", components: [menu], ephemeral: true });
+            await i.reply({ content: "Escolha um item:", components: [menu], ephemeral: true });
         }
 
-        // 5. TICKET
-        if (i.isStringSelectMenu() && i.customId === 'comprar_item') {
-            const prod = db.produtos[parseInt(i.values[0])];
+        // 5. TICKET E PAGAMENTO (SE SEGUE A MESMA LÓGICA ANTERIOR)
+        if (i.isStringSelectMenu() && i.customId.startsWith('compra_')) {
+            const msgId = i.customId.split('_').pop();
+            const prod = db.paineis[msgId].produtos[parseInt(i.values[0])];
+            
             const canal = await i.guild.channels.create({
                 name: `🛒-${i.user.username}`,
                 type: ChannelType.GuildText,
@@ -139,25 +150,22 @@ async function iniciarBot(token) {
                 ]
             });
 
-            const embed = new EmbedBuilder().setTitle("Revisão do Pedido").setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}\n\nClique no botão abaixo para pagar.`).setColor("#5865F2");
+            const embed = new EmbedBuilder().setTitle("Revisão").setDescription(`**Produto:** ${prod.nome}\n**Valor:** ${prod.valor}`).setColor("#5865F2");
             const btns = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`pg_${i.values[0]}`).setLabel('Pagar Agora').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('fechar').setLabel('Fechar Ticket').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('pagar_agora').setLabel('Pagar').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('fechar_t').setLabel('Fechar').setStyle(ButtonStyle.Danger)
             );
 
-            await canal.send({ content: `${i.user}`, embeds: [embed], components: [btns] });
-            await i.update({ content: `✅ Ticket aberto: ${canal}`, components: [] });
+            // Guardamos temporariamente os dados do produto no canal ou via variável
+            await canal.send({ content: `${i.user} | Chave PIX: \`${prod.pix}\``, embeds: [embed], components: [btns] });
+            await i.update({ content: `✅ Ticket: ${canal}`, components: [] });
         }
 
-        // 6. PAGAMENTO
-        if (i.isButton() && i.customId.startsWith('pg_')) {
-            const idx = parseInt(i.customId.split('_')[1]);
-            const prod = db.produtos[idx];
-            const embed = new EmbedBuilder().setTitle("💠 Pagamento via PIX").setDescription(`Pague o valor de **${prod.valor}**\n\nChave PIX:\n\`${prod.pix}\`\n\nEnvie o comprovante aqui no chat.`).setColor("#00ff6a");
-            await i.update({ embeds: [embed] });
+        if (i.isButton() && i.customId === 'pagar_agora') {
+            await i.reply({ content: "💠 Verifique a chave PIX enviada no topo do chat e anexe o comprovante.", ephemeral: true });
         }
 
-        if (i.isButton() && i.customId === 'fechar') await i.channel.delete().catch(() => {});
+        if (i.isButton() && i.customId === 'fechar_t') await i.channel.delete().catch(() => {});
     });
 
     await client.login(token);
